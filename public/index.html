@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CCats Gallery - Arkiv Image Viewer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: 2rem;
+      color: #e94560;
+      margin-bottom: 15px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .search-box {
+      display: flex;
+      gap: 8px;
+    }
+    .search-box input {
+      padding: 10px 15px;
+      border: 2px solid #16213e;
+      border-radius: 8px;
+      background: #0f0f23;
+      color: #eee;
+      font-size: 1rem;
+      width: 250px;
+    }
+    .search-box input:focus {
+      outline: none;
+      border-color: #e94560;
+    }
+    .search-box button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      background: #e94560;
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .search-box button:hover:not(:disabled) {
+      background: #ff6b6b;
+    }
+    .search-box button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .stats {
+      background: #16213e;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+    .stats strong {
+      color: #e94560;
+    }
+    .loading-text {
+      text-align: center;
+      padding: 50px;
+      font-size: 1.2rem;
+      color: #888;
+    }
+    .error {
+      text-align: center;
+      padding: 50px;
+      color: #e94560;
+    }
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #16213e;
+      border-radius: 12px;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 30px rgba(233, 69, 96, 0.2);
+    }
+    .card-img {
+      width: 100%;
+      height: 256px;
+      background: #0f0f23;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .card-img img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .card-img img.loaded {
+      opacity: 1;
+    }
+    .card-img .img-loader {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border: 3px solid #16213e;
+      border-top-color: #e94560;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    .card-img .img-loader.hidden {
+      display: none;
+    }
+    .card-img .placeholder {
+      color: #666;
+      font-size: 0.85rem;
+      position: absolute;
+    }
+    .card-info {
+      padding: 15px;
+    }
+    .card-id {
+      font-size: 0.8rem;
+      color: #e94560;
+      margin-bottom: 8px;
+      font-family: monospace;
+    }
+    .card-prompt {
+      font-size: 0.9rem;
+      color: #aaa;
+      line-height: 1.4;
+      max-height: 60px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-top: 30px;
+      flex-wrap: wrap;
+    }
+    .pagination button {
+      padding: 10px 20px;
+      border: 2px solid #16213e;
+      border-radius: 8px;
+      background: #16213e;
+      color: #eee;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .pagination button:hover:not(:disabled) {
+      border-color: #e94560;
+      background: #e94560;
+    }
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .pagination .page-info {
+      padding: 10px 15px;
+      color: #888;
+    }
+
+    /* Global loading overlay */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(26, 26, 46, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .loading-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .loading-spinner {
+      width: 60px;
+      height: 60px;
+      border: 4px solid #16213e;
+      border-top-color: #e94560;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    .loading-overlay p {
+      color: #888;
+      font-size: 1.1rem;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.9);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .modal.active {
+      display: flex;
+    }
+    .modal-content {
+      max-width: 600px;
+      background: #16213e;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .modal-img-container {
+      position: relative;
+      min-height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0f0f23;
+    }
+    .modal-img-container .loading-spinner {
+      position: absolute;
+    }
+    .modal-content img {
+      width: 100%;
+      display: block;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .modal-content img.loaded {
+      opacity: 1;
+    }
+    .modal-info {
+      padding: 20px;
+    }
+    .modal-info p {
+      margin-bottom: 10px;
+    }
+    .modal-close {
+      position: absolute;
+      top: 20px;
+      right: 30px;
+      font-size: 2rem;
+      color: #fff;
+      cursor: pointer;
+    }
+    .highlight {
+      background: #e94560;
+      color: white;
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+    .info-section {
+      max-width: 800px;
+      margin: 0 auto 15px;
+      background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
+      border-radius: 10px;
+      border: 1px solid #2a2a4e;
+      overflow: hidden;
+    }
+    .info-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 15px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .info-header:hover {
+      background: rgba(233, 69, 96, 0.1);
+    }
+    .info-header .powered-by {
+      font-size: 0.85rem;
+      color: #888;
+    }
+    .info-header .powered-by a {
+      color: #e94560;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .info-header .powered-by a:hover {
+      text-decoration: underline;
+    }
+    .info-toggle {
+      font-size: 0.8rem;
+      color: #666;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .info-toggle .arrow {
+      transition: transform 0.2s;
+    }
+    .info-section.expanded .info-toggle .arrow {
+      transform: rotate(180deg);
+    }
+    .info-content {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+    .info-section.expanded .info-content {
+      max-height: 400px;
+    }
+    .info-inner {
+      padding: 15px;
+      border-top: 1px solid #2a2a4e;
+      font-size: 0.85rem;
+      color: #aaa;
+      line-height: 1.6;
+    }
+    .info-inner h3 {
+      color: #e94560;
+      font-size: 0.9rem;
+      margin: 12px 0 6px;
+    }
+    .info-inner h3:first-child {
+      margin-top: 0;
+    }
+    .info-inner ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .info-inner li {
+      margin: 4px 0;
+    }
+    .info-inner code {
+      background: #0f0f23;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #e94560;
+    }
+    .info-inner a {
+      color: #e94560;
+      text-decoration: none;
+    }
+    .info-inner a:hover {
+      text-decoration: underline;
+    }
+    .tech-badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .tech-badge {
+      background: #0f0f23;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      color: #888;
+      border: 1px solid #2a2a4e;
+    }
+  </style>
+</head>
+<body>
+  <div class="loading-overlay" id="loading-overlay">
+    <div class="loading-spinner"></div>
+    <p id="loading-text">Loading images...</p>
+  </div>
+
+  <header>
+    <h1>CCats Gallery</h1>
+
+    <div class="info-section" id="info-section">
+      <div class="info-header" onclick="toggleInfo()">
+        <span class="powered-by">Powered by <a href="https://arkiv.network" target="_blank">ARKIV</a> blockchain</span>
+        <span class="info-toggle">About <span class="arrow">▼</span></span>
+      </div>
+      <div class="info-content">
+        <div class="info-inner">
+          <h3>About This Project</h3>
+          <p>Image gallery browser for pictures stored on the <a href="https://arkiv.network" target="_blank">ARKIV</a> decentralized database. Built with TypeScript using the official <a href="https://github.com/arkiv-network/arkiv-sdk-js" target="_blank">ARKIV JavaScript/TypeScript SDK</a>.</p>
+
+          <h3>Image Generator (Python)</h3>
+          <p>A separate Python application generates and uploads images using the <a href="https://github.com/arkiv-network/arkiv-sdk-py" target="_blank">ARKIV Python SDK</a>:</p>
+          <ul>
+            <li>AI-generated cat images using <strong>ComfyUI + Qwen 2.5 VL</strong> model</li>
+            <li><strong>2.3M+</strong> unique prompt combinations (cats × accessories × styles × colors × backgrounds)</li>
+            <li>Running on <strong>NVIDIA RTX 5090</strong></li>
+            <li>Automatic upload to ARKIV blockchain</li>
+            <li>Runs continuously until all combinations are generated</li>
+          </ul>
+
+          <h3>Owner Address</h3>
+          <p><code>0xa879Ae39cFDADB090C77Ef6083C15c5d9A0e9A95</code></p>
+
+          <div class="tech-badges">
+            <span class="tech-badge">TypeScript</span>
+            <span class="tech-badge">Python</span>
+            <span class="tech-badge">ARKIV SDK</span>
+            <span class="tech-badge">ComfyUI</span>
+            <span class="tech-badge">Qwen 2.5 VL</span>
+            <span class="tech-badge">RTX 5090</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="search-box">
+        <input type="text" id="search" placeholder="Search in prompts..." onkeydown="if(event.key==='Enter')doSearch()">
+        <button onclick="doSearch()" id="btn-search">Search</button>
+        <button onclick="clearSearch()" id="btn-clear" style="background:#16213e;border:2px solid #16213e;">Clear</button>
+      </div>
+    </div>
+    <div class="stats" id="stats">Loading...</div>
+  </header>
+
+  <div id="content">
+    <div class="loading-text">Loading images...</div>
+  </div>
+
+  <div class="pagination" id="pagination" style="display:none;">
+    <button onclick="goToPage(1)" id="btn-first">First</button>
+    <button onclick="goToPage(currentPage - 1)" id="btn-prev">Prev</button>
+    <span class="page-info" id="page-info"></span>
+    <button onclick="goToPage(currentPage + 1)" id="btn-next">Next</button>
+    <button onclick="goToPage(totalPages)" id="btn-last">Last</button>
+  </div>
+
+  <div class="modal" id="modal">
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <div class="modal-content">
+      <div class="modal-img-container">
+        <div class="loading-spinner" id="modal-spinner"></div>
+        <img id="modal-img" src="" alt="">
+      </div>
+      <div class="modal-info">
+        <p><strong>ID:</strong> <span id="modal-id"></span></p>
+        <p><strong>Prompt:</strong> <span id="modal-prompt"></span></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let images = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    let totalImages = 0;
+    let currentSearch = '';
+    let isLoading = false;
+    const perPage = 100;
+
+    function showLoading(text = 'Loading images...') {
+      isLoading = true;
+      document.getElementById('loading-text').textContent = text;
+      document.getElementById('loading-overlay').classList.add('active');
+      document.getElementById('btn-search').disabled = true;
+      document.getElementById('btn-clear').disabled = true;
+    }
+
+    function hideLoading() {
+      isLoading = false;
+      document.getElementById('loading-overlay').classList.remove('active');
+      document.getElementById('btn-search').disabled = false;
+      document.getElementById('btn-clear').disabled = false;
+    }
+
+    async function loadImages(page = 1, search = '') {
+      if (isLoading) return;
+
+      currentPage = page;
+      currentSearch = search;
+
+      const loadingText = search ? `Searching for "${search}"...` : `Loading page ${page}...`;
+      showLoading(loadingText);
+
+      try {
+        const params = new URLSearchParams({ page: page.toString(), perPage: perPage.toString() });
+        if (search) params.set('search', search);
+
+        const res = await fetch(`/api/images?${params}`);
+        if (!res.ok) throw new Error('Failed to fetch');
+
+        const data = await res.json();
+        images = data.images;
+        totalPages = data.pagination.totalPages;
+        totalImages = data.pagination.total;
+
+        updateStats();
+        renderGallery();
+        updatePagination();
+      } catch (err) {
+        document.getElementById('content').innerHTML =
+          '<div class="error">Failed to load images. Please refresh the page.</div>';
+        console.error(err);
+      } finally {
+        hideLoading();
+      }
+    }
+
+    function updateStats() {
+      const searchInfo = currentSearch ? ` matching "${currentSearch}"` : '';
+      const start = totalImages > 0 ? (currentPage - 1) * perPage + 1 : 0;
+      const end = Math.min(currentPage * perPage, totalImages);
+      document.getElementById('stats').innerHTML =
+        `<strong>${totalImages}</strong> images found${searchInfo} | Showing <strong>${start}-${end}</strong>`;
+    }
+
+    function updatePagination() {
+      const pagination = document.getElementById('pagination');
+      if (totalPages <= 1) {
+        pagination.style.display = 'none';
+        return;
+      }
+
+      pagination.style.display = 'flex';
+      document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages}`;
+      document.getElementById('btn-first').disabled = currentPage === 1;
+      document.getElementById('btn-prev').disabled = currentPage === 1;
+      document.getElementById('btn-next').disabled = currentPage === totalPages;
+      document.getElementById('btn-last').disabled = currentPage === totalPages;
+    }
+
+    function goToPage(page) {
+      if (page < 1 || page > totalPages || isLoading) return;
+      loadImages(page, currentSearch);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function doSearch() {
+      if (isLoading) return;
+      const search = document.getElementById('search').value.trim();
+      loadImages(1, search);
+    }
+
+    function clearSearch() {
+      if (isLoading) return;
+      document.getElementById('search').value = '';
+      loadImages(1, '');
+    }
+
+    function getImageUrl(key) {
+      return `/api/image?key=${encodeURIComponent(key)}`;
+    }
+
+    function highlightSearch(text) {
+      if (!currentSearch) return text;
+      const regex = new RegExp(`(${currentSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      return text.replace(regex, '<span class="highlight">$1</span>');
+    }
+
+    function onImageLoad(img, loader) {
+      img.classList.add('loaded');
+      loader.classList.add('hidden');
+    }
+
+    function onImageError(img, loader, placeholder) {
+      loader.classList.add('hidden');
+      placeholder.style.display = 'block';
+      img.style.display = 'none';
+    }
+
+    function renderGallery() {
+      if (images.length === 0) {
+        document.getElementById('content').innerHTML =
+          currentSearch
+            ? `<div class="loading-text">No images found matching "${currentSearch}"</div>`
+            : '<div class="loading-text">No images found</div>';
+        return;
+      }
+
+      const html = images.map((img, idx) => `
+        <div class="card" onclick="openModal(${idx})">
+          <div class="card-img">
+            <div class="img-loader" id="loader-${idx}"></div>
+            <img
+              src="${getImageUrl(img.key)}"
+              alt="${img.prompt}"
+              loading="lazy"
+              onload="onImageLoad(this, document.getElementById('loader-${idx}'))"
+              onerror="onImageError(this, document.getElementById('loader-${idx}'), document.getElementById('placeholder-${idx}'))"
+            >
+            <span class="placeholder" id="placeholder-${idx}" style="display:none">Failed to load</span>
+          </div>
+          <div class="card-info">
+            <div class="card-id">ID: ${img.id}</div>
+            <div class="card-prompt">${highlightSearch(img.prompt) || 'No prompt'}</div>
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('content').innerHTML = `<div class="gallery">${html}</div>`;
+    }
+
+    function openModal(idx) {
+      const img = images[idx];
+      const modalImg = document.getElementById('modal-img');
+      const spinner = document.getElementById('modal-spinner');
+
+      modalImg.classList.remove('loaded');
+      spinner.style.display = 'block';
+
+      modalImg.onload = () => {
+        modalImg.classList.add('loaded');
+        spinner.style.display = 'none';
+      };
+
+      modalImg.src = getImageUrl(img.key);
+      document.getElementById('modal-id').textContent = img.id;
+      document.getElementById('modal-prompt').innerHTML = highlightSearch(img.prompt) || 'No prompt';
+      document.getElementById('modal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('active');
+    }
+
+    document.getElementById('modal').addEventListener('click', (e) => {
+      if (e.target.id === 'modal') closeModal();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    function toggleInfo() {
+      document.getElementById('info-section').classList.toggle('expanded');
+    }
+
+    loadImages();
+  </script>
+</body>
+</html>
