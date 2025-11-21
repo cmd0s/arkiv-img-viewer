@@ -498,6 +498,13 @@
       </div>
     </div>
     <div class="stats" id="stats">Loading...</div>
+    <div class="pagination" id="pagination-top" style="display:none; margin-top: 15px;">
+      <button onclick="goToPage(1)" id="btn-first-top">First</button>
+      <button onclick="goToPage(currentPage - 1)" id="btn-prev-top">Prev</button>
+      <span class="page-info" id="page-info-top"></span>
+      <button onclick="goToPage(currentPage + 1)" id="btn-next-top">Next</button>
+      <button onclick="goToPage(totalPages)" id="btn-last-top">Last</button>
+    </div>
   </header>
 
   <div id="content">
@@ -628,19 +635,24 @@
     }
 
     function updatePagination() {
-      const pagination = document.getElementById('pagination');
-      if (totalPages <= 1 && !isEstimated) {
-        pagination.style.display = 'none';
-        return;
-      }
-
-      pagination.style.display = 'flex';
+      const showPagination = totalPages > 1 || isEstimated;
       const pagesDisplay = isEstimated ? `${totalPages}+` : totalPages;
-      document.getElementById('page-info').textContent = `Page ${currentPage} of ${pagesDisplay}`;
-      document.getElementById('btn-first').disabled = currentPage === 1;
-      document.getElementById('btn-prev').disabled = currentPage === 1;
-      document.getElementById('btn-next').disabled = !isEstimated && currentPage === totalPages;
-      document.getElementById('btn-last').disabled = isEstimated || currentPage === totalPages;
+      const pageText = `Page ${currentPage} of ${pagesDisplay}`;
+      const isFirst = currentPage === 1;
+      const isLast = !isEstimated && currentPage === totalPages;
+
+      // Update both pagination bars
+      ['', '-top'].forEach(suffix => {
+        const pagination = document.getElementById('pagination' + suffix);
+        pagination.style.display = showPagination ? 'flex' : 'none';
+        if (showPagination) {
+          document.getElementById('page-info' + suffix).textContent = pageText;
+          document.getElementById('btn-first' + suffix).disabled = isFirst;
+          document.getElementById('btn-prev' + suffix).disabled = isFirst;
+          document.getElementById('btn-next' + suffix).disabled = isLast;
+          document.getElementById('btn-last' + suffix).disabled = isEstimated || currentPage === totalPages;
+        }
+      });
     }
 
     function goToPage(page) {
