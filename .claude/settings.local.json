@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npm start)",
       "Bash(curl:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

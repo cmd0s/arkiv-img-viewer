@@ -173,11 +173,6 @@
       align-items: center;
       margin-bottom: 8px;
     }
-    .card-meta {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
     .card-id {
       font-size: 0.8rem;
       color: #e94560;
@@ -207,11 +202,6 @@
     .explorer-link:hover {
       color: #e94560;
       background: #1a1a2e;
-    }
-    .card-size {
-      font-size: 0.75rem;
-      color: #666;
-      font-family: monospace;
     }
     .pagination {
       display: flex;
@@ -460,7 +450,7 @@
 
     <div class="info-section" id="info-section">
       <div class="info-header" onclick="toggleInfo()">
-        <span class="powered-by">Powered by <a href="https://arkiv.network" target="_blank">ARKIV</a> blockchain</span>
+        <span class="powered-by">Powered by <a href="https://arkiv.network" target="_blank">ARKIV</a> database</span>
         <span class="info-toggle">About <span class="arrow">▼</span></span>
       </div>
       <div class="info-content">
@@ -531,7 +521,6 @@
       </div>
       <div class="modal-info">
         <p><strong>ID:</strong> <span id="modal-id"></span></p>
-        <p><strong>Size:</strong> <span id="modal-size">...</span></p>
         <p><strong>Prompt:</strong> <span id="modal-prompt"></span></p>
         <p style="margin-top:12px">
           <a id="modal-download" href="#" download class="explorer-link" style="font-size:0.85rem;padding:6px 12px;">Download</a>
@@ -546,16 +535,29 @@
     let currentPage = 1;
     let totalPages = 1;
     let totalImages = 0;
+    let isEstimated = false;
     let currentSearch = '';
     let isLoading = false;
     let perPage = 50;
-
-    function showLoading(text = 'Loading images...') {
+    let loadingTimer = null;
+    let loadingStartTime = 0;
+    function showLoading(text = 'Connecting to ARKIV...') {
       isLoading = true;
-      document.getElementById('loading-text').textContent = text;
+      loadingStartTime = Date.now();
+      updateLoadingText(text);
       document.getElementById('loading-overlay').classList.add('active');
       document.getElementById('btn-search').disabled = true;
       document.getElementById('btn-clear').disabled = true;
+    }
+
+    function updateLoadingText(status, count) {
+      const elapsed = Math.floor((Date.now() - loadingStartTime) / 1000);
+      let text = status;
+      if (count !== undefined && count > 0) {
+        text += ` (${count} entities)`;
+      }
+      text += ` [${elapsed}s]`;
+      document.getElementById('loading-text').textContent = text;
     }
 
     function hideLoading() {
@@ -565,64 +567,86 @@
       document.getElementById('btn-clear').disabled = false;
     }
 
-    async function loadImages(page = 1, search = '') {
+    function loadImages(page = 1, search = '') {
       if (isLoading) return;
 
       currentPage = page;
       currentSearch = search;
 
-      const loadingText = search ? `Searching for "${search}"...` : `Loading page ${page}...`;
-      showLoading(loadingText);
+      const initialText = search ? `Searching for "${search}"...` : 'Connecting to ARKIV...';
+      showLoading(initialText);
 
-      try {
-        const params = new URLSearchParams({ page: page.toString(), perPage: perPage.toString() });
-        if (search) params.set('search', search);
+      const params = new URLSearchParams({ page: page.toString(), perPage: perPage.toString() });
+      if (search) params.set('search', search);
 
-        const res = await fetch(`/api/images?${params}`);
-        if (!res.ok) throw new Error('Failed to fetch');
+      const eventSource = new EventSource(`/api/images/stream?${params}`);
 
-        const data = await res.json();
+      eventSource.addEventListener('progress', (e) => {
+        const data = JSON.parse(e.data);
+        updateLoadingText(data.status, data.count);
+      });
+
+      eventSource.addEventListener('complete', (e) => {
+        const data = JSON.parse(e.data);
         images = data.images;
         totalPages = data.pagination.totalPages;
         totalImages = data.pagination.total;
+        isEstimated = data.pagination.estimated || false;
 
         updateStats();
         renderGallery();
         updatePagination();
-      } catch (err) {
+        hideLoading();
+        eventSource.close();
+      });
+
+      eventSource.addEventListener('error', (e) => {
+        console.error('SSE error:', e);
         document.getElementById('content').innerHTML =
           '<div class="error">Failed to load images. Please refresh the page.</div>';
-        console.error(err);
-      } finally {
         hideLoading();
-      }
+        eventSource.close();
+      });
+
+      eventSource.onerror = () => {
+        if (eventSource.readyState === EventSource.CLOSED) return;
+        console.error('EventSource failed');
+        document.getElementById('content').innerHTML =
+          '<div class="error">Connection failed. Please refresh the page.</div>';
+        hideLoading();
+        eventSource.close();
+      };
     }
 
     function updateStats() {
       const searchInfo = currentSearch ? ` matching "${currentSearch}"` : '';
       const start = totalImages > 0 ? (currentPage - 1) * perPage + 1 : 0;
-      const end = Math.min(currentPage * perPage, totalImages);
+      const end = start + images.length - 1;
+      const totalDisplay = isEstimated ? `${totalImages - 1}+` : totalImages;
       document.getElementById('stats').innerHTML =
-        `<strong>${totalImages}</strong> images found${searchInfo} | Showing <strong>${start}-${end}</strong>`;
+        `<strong>${totalDisplay}</strong> images${searchInfo} | Showing <strong>${start}-${end}</strong>`;
     }
 
     function updatePagination() {
       const pagination = document.getElementById('pagination');
-      if (totalPages <= 1) {
+      if (totalPages <= 1 && !isEstimated) {
         pagination.style.display = 'none';
         return;
       }
 
       pagination.style.display = 'flex';
-      document.getElementById('page-info').textContent = `Page ${currentPage} of ${totalPages}`;
+      const pagesDisplay = isEstimated ? `${totalPages}+` : totalPages;
+      document.getElementById('page-info').textContent = `Page ${currentPage} of ${pagesDisplay}`;
       document.getElementById('btn-first').disabled = currentPage === 1;
       document.getElementById('btn-prev').disabled = currentPage === 1;
-      document.getElementById('btn-next').disabled = currentPage === totalPages;
-      document.getElementById('btn-last').disabled = currentPage === totalPages;
+      document.getElementById('btn-next').disabled = !isEstimated && currentPage === totalPages;
+      document.getElementById('btn-last').disabled = isEstimated || currentPage === totalPages;
     }
 
     function goToPage(page) {
-      if (page < 1 || page > totalPages || isLoading) return;
+      if (page < 1 || isLoading) return;
+      // Allow going to next page even if estimated (we'll find out if there's more)
+      if (!isEstimated && page > totalPages) return;
       loadImages(page, currentSearch);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -659,30 +683,9 @@
       return text.replace(regex, '<span class="highlight">$1</span>');
     }
 
-    function formatSize(bytes) {
-      if (bytes < 1024) return bytes + ' B';
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-    }
-
-    async function fetchImageSize(key, sizeElementId) {
-      try {
-        const res = await fetch(`/api/image/info?key=${encodeURIComponent(key)}`);
-        if (res.ok) {
-          const data = await res.json();
-          const el = document.getElementById(sizeElementId);
-          if (el) el.textContent = formatSize(data.size);
-        }
-      } catch (e) {
-        console.error('Failed to fetch size:', e);
-      }
-    }
-
     function onImageLoad(img, loader, idx) {
       img.classList.add('loaded');
       loader.classList.add('hidden');
-      const imgData = images[idx];
-      if (imgData) fetchImageSize(imgData.key, `size-${idx}`);
     }
 
     function onImageError(img, loader, placeholder) {
@@ -715,10 +718,7 @@
           </div>
           <div class="card-info">
             <div class="card-header">
-              <div class="card-meta">
-                <span class="card-id">ID: ${img.id}</span>
-                <span class="card-size" id="size-${idx}">...</span>
-              </div>
+              <span class="card-id">ID: ${img.id}</span>
               <div class="card-actions">
                 <a href="${getImageUrl(img.key)}" download="ccats-${img.id}.png" class="explorer-link" onclick="event.stopPropagation()">Download</a>
                 <a href="${getExplorerUrl(img.key)}" target="_blank" class="explorer-link" onclick="event.stopPropagation()">Explorer</a>
@@ -747,14 +747,11 @@
 
       modalImg.src = getImageUrl(img.key);
       document.getElementById('modal-id').textContent = img.id;
-      document.getElementById('modal-size').textContent = '...';
       document.getElementById('modal-prompt').innerHTML = highlightSearch(img.prompt) || 'No prompt';
       document.getElementById('modal-download').href = getImageUrl(img.key);
       document.getElementById('modal-download').download = `ccats-${img.id}.png`;
       document.getElementById('modal-explorer').href = getExplorerUrl(img.key);
       document.getElementById('modal').classList.add('active');
-
-      fetchImageSize(img.key, 'modal-size');
     }
 
     function closeModal() {
