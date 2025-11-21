@@ -40,6 +40,7 @@ interface ImageMeta {
   key: string
   id: string
   prompt: string
+  size?: number
 }
 
 // Cache for image list
@@ -167,7 +168,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       if (imageData) {
         res.writeHead(200, {
           "Content-Type": "image/png",
+          "Content-Length": imageData.length.toString(),
           "Cache-Control": "public, max-age=86400",
+          "Access-Control-Expose-Headers": "Content-Length",
         })
         res.end(imageData)
       } else {
@@ -178,6 +181,31 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       console.error("Error fetching image:", error)
       res.writeHead(500)
       res.end("Error fetching image")
+    }
+    return
+  }
+
+  // Image info (size) by key
+  if (url.pathname === "/api/image/info") {
+    const key = url.searchParams.get("key")
+    if (!key) {
+      res.writeHead(400, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ error: "Missing key parameter" }))
+      return
+    }
+    try {
+      const imageData = await fetchImage(key)
+      if (imageData) {
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ key, size: imageData.length }))
+      } else {
+        res.writeHead(404, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: "Image not found" }))
+      }
+    } catch (error) {
+      console.error("Error fetching image info:", error)
+      res.writeHead(500, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ error: "Failed to fetch image info" }))
     }
     return
   }

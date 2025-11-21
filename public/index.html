@@ -145,11 +145,25 @@
     .card-info {
       padding: 15px;
     }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
     .card-id {
       font-size: 0.8rem;
       color: #e94560;
-      margin-bottom: 8px;
       font-family: monospace;
+    }
+    .card-actions {
+      display: flex;
+      gap: 6px;
     }
     .card-prompt {
       font-size: 0.9rem;
@@ -158,11 +172,6 @@
       max-height: 42px;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-    .card-footer {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: 8px;
     }
     .explorer-link {
       font-size: 0.75rem;
@@ -176,6 +185,11 @@
     .explorer-link:hover {
       color: #e94560;
       background: #1a1a2e;
+    }
+    .card-size {
+      font-size: 0.75rem;
+      color: #666;
+      font-family: monospace;
     }
     .pagination {
       display: flex;
@@ -487,8 +501,12 @@
       </div>
       <div class="modal-info">
         <p><strong>ID:</strong> <span id="modal-id"></span></p>
+        <p><strong>Size:</strong> <span id="modal-size">...</span></p>
         <p><strong>Prompt:</strong> <span id="modal-prompt"></span></p>
-        <p style="margin-top:12px"><a id="modal-explorer" href="#" target="_blank" class="explorer-link" style="font-size:0.85rem;padding:6px 12px;">View on ARKIV Explorer</a></p>
+        <p style="margin-top:12px">
+          <a id="modal-download" href="#" download class="explorer-link" style="font-size:0.85rem;padding:6px 12px;">Download</a>
+          <a id="modal-explorer" href="#" target="_blank" class="explorer-link" style="font-size:0.85rem;padding:6px 12px;">Explorer</a>
+        </p>
       </div>
     </div>
   </div>
@@ -605,9 +623,30 @@
       return text.replace(regex, '<span class="highlight">$1</span>');
     }
 
-    function onImageLoad(img, loader) {
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    async function fetchImageSize(key, sizeElementId) {
+      try {
+        const res = await fetch(`/api/image/info?key=${encodeURIComponent(key)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const el = document.getElementById(sizeElementId);
+          if (el) el.textContent = formatSize(data.size);
+        }
+      } catch (e) {
+        console.error('Failed to fetch size:', e);
+      }
+    }
+
+    function onImageLoad(img, loader, idx) {
       img.classList.add('loaded');
       loader.classList.add('hidden');
+      const imgData = images[idx];
+      if (imgData) fetchImageSize(imgData.key, `size-${idx}`);
     }
 
     function onImageError(img, loader, placeholder) {
@@ -633,17 +672,23 @@
               src="${getImageUrl(img.key)}"
               alt="${img.prompt}"
               loading="lazy"
-              onload="onImageLoad(this, document.getElementById('loader-${idx}'))"
+              onload="onImageLoad(this, document.getElementById('loader-${idx}'), ${idx})"
               onerror="onImageError(this, document.getElementById('loader-${idx}'), document.getElementById('placeholder-${idx}'))"
             >
             <span class="placeholder" id="placeholder-${idx}" style="display:none">Failed to load</span>
           </div>
           <div class="card-info">
-            <div class="card-id">ID: ${img.id}</div>
-            <div class="card-prompt">${highlightSearch(img.prompt) || 'No prompt'}</div>
-            <div class="card-footer">
-              <a href="${getExplorerUrl(img.key)}" target="_blank" class="explorer-link" onclick="event.stopPropagation()">Explorer</a>
+            <div class="card-header">
+              <div class="card-meta">
+                <span class="card-id">ID: ${img.id}</span>
+                <span class="card-size" id="size-${idx}">...</span>
+              </div>
+              <div class="card-actions">
+                <a href="${getImageUrl(img.key)}" download="ccats-${img.id}.png" class="explorer-link" onclick="event.stopPropagation()">Download</a>
+                <a href="${getExplorerUrl(img.key)}" target="_blank" class="explorer-link" onclick="event.stopPropagation()">Explorer</a>
+              </div>
             </div>
+            <div class="card-prompt">${highlightSearch(img.prompt) || 'No prompt'}</div>
           </div>
         </div>
       `).join('');
@@ -666,9 +711,14 @@
 
       modalImg.src = getImageUrl(img.key);
       document.getElementById('modal-id').textContent = img.id;
+      document.getElementById('modal-size').textContent = '...';
       document.getElementById('modal-prompt').innerHTML = highlightSearch(img.prompt) || 'No prompt';
+      document.getElementById('modal-download').href = getImageUrl(img.key);
+      document.getElementById('modal-download').download = `ccats-${img.id}.png`;
       document.getElementById('modal-explorer').href = getExplorerUrl(img.key);
       document.getElementById('modal').classList.add('active');
+
+      fetchImageSize(img.key, 'modal-size');
     }
 
     function closeModal() {
