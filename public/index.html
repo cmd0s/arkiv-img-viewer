@@ -542,7 +542,6 @@
     let currentPage = 1;
     let totalPages = 1;
     let totalImages = 0;
-    let isEstimated = false;
     let currentSearch = '';
     let isLoading = false;
     let perPage = 50;
@@ -598,7 +597,6 @@
         images = data.images;
         totalPages = data.pagination.totalPages;
         totalImages = data.pagination.total;
-        isEstimated = data.pagination.estimated || false;
 
         updateStats();
         renderGallery();
@@ -629,17 +627,15 @@
       const searchInfo = currentSearch ? ` matching "${currentSearch}"` : '';
       const start = totalImages > 0 ? (currentPage - 1) * perPage + 1 : 0;
       const end = start + images.length - 1;
-      const totalDisplay = isEstimated ? `${totalImages - 1}+` : totalImages;
       document.getElementById('stats').innerHTML =
-        `<strong>${totalDisplay}</strong> images${searchInfo} | Showing <strong>${start}-${end}</strong>`;
+        `<strong>${totalImages}</strong> images${searchInfo} | Showing <strong>${start}-${end}</strong>`;
     }
 
     function updatePagination() {
-      const showPagination = totalPages > 1 || isEstimated;
-      const pagesDisplay = isEstimated ? `${totalPages}+` : totalPages;
-      const pageText = `Page ${currentPage} of ${pagesDisplay}`;
+      const showPagination = totalPages > 1;
+      const pageText = `Page ${currentPage} of ${totalPages}`;
       const isFirst = currentPage === 1;
-      const isLast = !isEstimated && currentPage === totalPages;
+      const isLast = currentPage === totalPages;
 
       // Update both pagination bars
       ['', '-top'].forEach(suffix => {
@@ -650,15 +646,13 @@
           document.getElementById('btn-first' + suffix).disabled = isFirst;
           document.getElementById('btn-prev' + suffix).disabled = isFirst;
           document.getElementById('btn-next' + suffix).disabled = isLast;
-          document.getElementById('btn-last' + suffix).disabled = isEstimated || currentPage === totalPages;
+          document.getElementById('btn-last' + suffix).disabled = isLast;
         }
       });
     }
 
     function goToPage(page) {
-      if (page < 1 || isLoading) return;
-      // Allow going to next page even if estimated (we'll find out if there's more)
-      if (!isEstimated && page > totalPages) return;
+      if (page < 1 || page > totalPages || isLoading) return;
       loadImages(page, currentSearch);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }

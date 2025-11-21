@@ -258,58 +258,28 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const perPage = parseInt(url.searchParams.get("perPage") || "50")
       const search = (url.searchParams.get("search") || "").toLowerCase().trim()
 
+      // Always fetch all images (sorted by ID desc - newest first)
+      const allImages = await fetchAllImages((status, count) => {
+        sendEvent("progress", { status, count: count || 0 })
+      })
+
+      let images = allImages
+
+      // Filter by search if provided
       if (search) {
-        // Search requires fetching ALL images to filter
-        sendEvent("progress", { status: "Search requires loading all data...", count: 0 })
-
-        const images = await fetchAllImages((status, count) => {
-          sendEvent("progress", { status, count: count || 0 })
-        })
-
-        sendEvent("progress", { status: "Filtering results...", count: images.length })
-        const filtered = images.filter((img) => img.prompt.toLowerCase().includes(search))
-
-        const total = filtered.length
-        const totalPages = Math.ceil(total / perPage)
-        const start = (page - 1) * perPage
-        const paginatedImages = filtered.slice(start, start + perPage)
-
-        sendEvent("complete", {
-          images: paginatedImages,
-          pagination: { page, perPage, total, totalPages },
-        })
-      } else {
-        // No search - use lazy pagination (fast!)
-        const startIdx = (page - 1) * perPage
-        const endIdx = startIdx + perPage
-
-        const { images, hasMore, totalFetched } = await fetchPagesForRange(
-          startIdx,
-          endIdx,
-          (status, count) => sendEvent("progress", { status, count: count || 0 })
-        )
-
-        // Calculate total (estimate if we don't know yet)
-        let total: number
-        let totalPages: number
-        if (totalArkivPages !== null) {
-          // We know the exact total
-          total = 0
-          for (let i = 1; i <= totalArkivPages; i++) {
-            total += arkivPageCache.get(i)?.length || 0
-          }
-          totalPages = Math.ceil(total / perPage)
-        } else {
-          // Estimate: we have at least this many, show "+" indicator
-          total = hasMore ? totalFetched + 1 : totalFetched
-          totalPages = hasMore ? page + 1 : page
-        }
-
-        sendEvent("complete", {
-          images,
-          pagination: { page, perPage, total, totalPages, estimated: totalArkivPages === null },
-        })
+        sendEvent("progress", { status: "Filtering results...", count: allImages.length })
+        images = allImages.filter((img) => img.prompt.toLowerCase().includes(search))
       }
+
+      const total = images.length
+      const totalPages = Math.ceil(total / perPage)
+      const start = (page - 1) * perPage
+      const paginatedImages = images.slice(start, start + perPage)
+
+      sendEvent("complete", {
+        images: paginatedImages,
+        pagination: { page, perPage, total, totalPages },
+      })
     } catch (error) {
       console.error("Error in SSE:", error)
       sendEvent("error", { error: "Failed to fetch images" })
@@ -326,45 +296,24 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
       const perPage = parseInt(url.searchParams.get("perPage") || "100")
       const search = (url.searchParams.get("search") || "").toLowerCase().trim()
 
+      // Always fetch all images (sorted by ID desc - newest first)
+      const allImages = await fetchAllImages()
+      let images = allImages
+
       if (search) {
-        // Search requires all images
-        const images = await fetchAllImages()
-        const filtered = images.filter((img) => img.prompt.toLowerCase().includes(search))
-        const total = filtered.length
-        const totalPages = Math.ceil(total / perPage)
-        const start = (page - 1) * perPage
-        const paginatedImages = filtered.slice(start, start + perPage)
-
-        res.writeHead(200, { "Content-Type": "application/json" })
-        res.end(JSON.stringify({
-          images: paginatedImages,
-          pagination: { page, perPage, total, totalPages },
-        }))
-      } else {
-        // Lazy pagination
-        const startIdx = (page - 1) * perPage
-        const endIdx = startIdx + perPage
-        const { images, hasMore, totalFetched } = await fetchPagesForRange(startIdx, endIdx)
-
-        let total: number
-        let totalPages: number
-        if (totalArkivPages !== null) {
-          total = 0
-          for (let i = 1; i <= totalArkivPages; i++) {
-            total += arkivPageCache.get(i)?.length || 0
-          }
-          totalPages = Math.ceil(total / perPage)
-        } else {
-          total = hasMore ? totalFetched + 1 : totalFetched
-          totalPages = hasMore ? page + 1 : page
-        }
-
-        res.writeHead(200, { "Content-Type": "application/json" })
-        res.end(JSON.stringify({
-          images,
-          pagination: { page, perPage, total, totalPages, estimated: totalArkivPages === null },
-        }))
+        images = allImages.filter((img) => img.prompt.toLowerCase().includes(search))
       }
+
+      const total = images.length
+      const totalPages = Math.ceil(total / perPage)
+      const start = (page - 1) * perPage
+      const paginatedImages = images.slice(start, start + perPage)
+
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({
+        images: paginatedImages,
+        pagination: { page, perPage, total, totalPages },
+      }))
     } catch (error) {
       console.error("Error fetching images:", error)
       res.writeHead(500, { "Content-Type": "application/json" })
