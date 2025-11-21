@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 import { config } from "dotenv"
 import { createPublicClient, http } from "@arkiv-network/sdk"
-import { eq } from "@arkiv-network/sdk/query"
+import { eq, gt, lte } from "@arkiv-network/sdk/query"
 import { defineChain } from "viem"
 
 config()
@@ -42,13 +42,9 @@ interface ImageMeta {
   prompt: string
 }
 
-// Cache for ARKIV pages (keyed by ARKIV page number)
-const arkivPageCache: Map<number, ImageMeta[]> = new Map()
-let totalArkivPages: number | null = null
-let allImagesSorted: ImageMeta[] | null = null
-let cacheTime = 0
-const CACHE_TTL = 300000 // 5 minutes
-const ARKIV_PAGE_SIZE = 50 // ARKIV's page size
+// Cache
+let cachedMaxId: number | null = null
+const PAGE_SIZE = 50
 
 type ProgressCallback = (status: string, count?: number) => void
 
@@ -64,52 +60,33 @@ function parseEntities(entities: any[]): ImageMeta[] {
   })
 }
 
-// Fetch specific ARKIV pages needed for user's request (no search)
-async function fetchPagesForRange(
-  startIdx: number,
-  endIdx: number,
-  onProgress?: ProgressCallback
-): Promise<{ images: ImageMeta[]; hasMore: boolean; totalFetched: number }> {
-  const now = Date.now()
-  const isCacheValid = now - cacheTime < CACHE_TTL
+// Find max ID - simple approach: fetch batch and find max locally
+async function findMaxId(onProgress?: ProgressCallback): Promise<number> {
+  onProgress?.("Finding newest images...")
 
-  // Calculate which ARKIV pages we need
-  const startPage = Math.floor(startIdx / ARKIV_PAGE_SIZE) + 1
-  const endPage = Math.floor((endIdx - 1) / ARKIV_PAGE_SIZE) + 1
+  // If we have cached max, just check for newer items (1 query)
+  if (cachedMaxId !== null) {
+    const checkQuery = publicClient.buildQuery()
+    const checkResult = await checkQuery
+      .where(eq("app", "CCats"))
+      .where(eq("type", "image"))
+      .where(gt("id", cachedMaxId))
+      .ownedBy(OWNER_ADDRESS)
+      .withAttributes(true)
+      .withPayload(false)
+      .limit(100)
+      .fetch()
 
-  // Check if all needed pages are cached
-  const neededPages: number[] = []
-  for (let p = startPage; p <= endPage; p++) {
-    if (!isCacheValid || !arkivPageCache.has(p)) {
-      neededPages.push(p)
+    if (checkResult.entities.length > 0) {
+      const newImages = parseEntities(checkResult.entities)
+      const newMax = Math.max(...newImages.map((i) => parseInt(i.id) || 0))
+      cachedMaxId = Math.max(cachedMaxId, newMax)
+      console.log(`Updated max ID: ${cachedMaxId}`)
     }
+    return cachedMaxId
   }
 
-  if (neededPages.length === 0) {
-    onProgress?.("Using cached data")
-    // All pages cached, extract the range
-    const allFromCache: ImageMeta[] = []
-    for (let p = startPage; p <= endPage; p++) {
-      allFromCache.push(...(arkivPageCache.get(p) || []))
-    }
-    const offsetInFirstPage = startIdx % ARKIV_PAGE_SIZE
-    const count = endIdx - startIdx
-    const images = allFromCache.slice(offsetInFirstPage, offsetInFirstPage + count)
-    const hasMore = totalArkivPages !== null && endPage < totalArkivPages
-    return { images, hasMore, totalFetched: startIdx + images.length }
-  }
-
-  // Need to fetch some pages
-  if (!isCacheValid) {
-    arkivPageCache.clear()
-    totalArkivPages = null
-    allImagesSorted = null
-    cacheTime = now
-  }
-
-  onProgress?.("Connecting to ARKIV...")
-  console.log(`Fetching ARKIV pages ${neededPages.join(", ")}...`)
-
+  // No cache - fetch first batch and find max (1 query)
   const query = publicClient.buildQuery()
   const result = await query
     .where(eq("app", "CCats"))
@@ -117,72 +94,92 @@ async function fetchPagesForRange(
     .ownedBy(OWNER_ADDRESS)
     .withAttributes(true)
     .withPayload(false)
-    .limit(ARKIV_PAGE_SIZE)
+    .limit(200)
     .fetch()
 
-  let currentPage = 1
-  arkivPageCache.set(currentPage, parseEntities(result.entities))
-  onProgress?.(`Loaded page ${currentPage}`)
+  const images = parseEntities(result.entities)
+  cachedMaxId = images.length > 0 ? Math.max(...images.map((i) => parseInt(i.id) || 0)) : 0
+  console.log(`Found max ID: ${cachedMaxId}`)
+  return cachedMaxId
+}
 
-  // Navigate to the pages we need
-  while (result.hasNextPage() && currentPage < endPage) {
-    currentPage++
+// Estimate total from max ID (fast - no extra queries)
+function estimateTotal(): number {
+  // For sequential IDs, max ID ≈ total count
+  // This is an estimate but avoids expensive full scan
+  return cachedMaxId || 0
+}
+
+// Fetch images in reverse order (newest first) using ID range queries
+async function fetchImagesReverse(
+  page: number,
+  perPage: number,
+  onProgress?: ProgressCallback
+): Promise<{ images: ImageMeta[]; total: number; totalPages: number }> {
+  onProgress?.("Connecting to ARKIV...")
+
+  // Find max ID first (cached after first call)
+  const maxId = await findMaxId(onProgress)
+
+  // Calculate ID range for this page (descending)
+  // Page 1 = IDs from maxId down to maxId-perPage+1
+  // Page 2 = IDs from maxId-perPage down to maxId-2*perPage+1
+  const upperBound = maxId - (page - 1) * perPage
+  const lowerBound = Math.max(0, upperBound - perPage) // Never go below 0
+
+  onProgress?.(`Loading images ${lowerBound + 1} to ${upperBound}...`)
+
+  // Query for IDs in this range: lowerBound < id <= upperBound
+  const query = publicClient.buildQuery()
+  const result = await query
+    .where(eq("app", "CCats"))
+    .where(eq("type", "image"))
+    .where(gt("id", lowerBound))
+    .where(lte("id", upperBound))
+    .ownedBy(OWNER_ADDRESS)
+    .withAttributes(true)
+    .withPayload(false)
+    .limit(perPage + 10) // Get a bit more in case of gaps
+    .fetch()
+
+  let images = parseEntities(result.entities)
+
+  // Get more if needed and available
+  while (images.length < perPage && result.hasNextPage()) {
     await result.next()
-    arkivPageCache.set(currentPage, parseEntities(result.entities))
-    onProgress?.(`Loaded page ${currentPage}`)
+    images = images.concat(parseEntities(result.entities))
   }
 
-  // Check if there are more pages
-  const hasMore = result.hasNextPage()
-  if (!hasMore) {
-    totalArkivPages = currentPage
+  // Fallback: if range query returned nothing but we expect data,
+  // IDs might still be strings - fall back to full fetch
+  if (images.length === 0 && page === 1 && maxId > 0) {
+    onProgress?.("Falling back to full load (IDs still migrating)...")
+    const allImages = await fetchAllImages(onProgress)
+    const total = allImages.length
+    const totalPages = Math.ceil(total / perPage)
+    const start = (page - 1) * perPage
+    return {
+      images: allImages.slice(start, start + perPage),
+      total,
+      totalPages,
+    }
   }
 
-  // Extract the range we need
-  const allFromCache: ImageMeta[] = []
-  for (let p = startPage; p <= Math.min(endPage, currentPage); p++) {
-    allFromCache.push(...(arkivPageCache.get(p) || []))
-  }
+  // Sort by ID descending (newest first) and limit to perPage
+  images.sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0))
+  images = images.slice(0, perPage)
 
-  const offsetInFirstPage = startIdx % ARKIV_PAGE_SIZE
-  const count = endIdx - startIdx
-  const images = allFromCache.slice(offsetInFirstPage, offsetInFirstPage + count)
+  // Estimate total from max ID (no extra query)
+  const total = estimateTotal()
+  const totalPages = Math.ceil(total / perPage)
 
   onProgress?.("Complete", images.length)
-  return { images, hasMore, totalFetched: startIdx + images.length }
+  return { images, total, totalPages }
 }
 
 // Fetch ALL images (needed for search)
 async function fetchAllImages(onProgress?: ProgressCallback): Promise<ImageMeta[]> {
-  const now = Date.now()
-
-  // Return sorted cache if valid
-  if (allImagesSorted && now - cacheTime < CACHE_TTL) {
-    onProgress?.("Using cached data", allImagesSorted.length)
-    return allImagesSorted
-  }
-
-  // Check if we have all pages cached
-  if (totalArkivPages !== null && now - cacheTime < CACHE_TTL) {
-    const allImages: ImageMeta[] = []
-    for (let i = 1; i <= totalArkivPages; i++) {
-      if (arkivPageCache.has(i)) {
-        allImages.push(...arkivPageCache.get(i)!)
-      } else {
-        break // Missing page, need to refetch
-      }
-    }
-    if (allImages.length > 0) {
-      allImages.sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0))
-      allImagesSorted = allImages
-      onProgress?.("Using cached data", allImages.length)
-      return allImages
-    }
-  }
-
-  // Need to fetch all
-  onProgress?.("Connecting to ARKIV...")
-  console.log("Fetching all images from ARKIV...")
+  onProgress?.("Loading all images for search...")
 
   const query = publicClient.buildQuery()
   const result = await query
@@ -191,37 +188,29 @@ async function fetchAllImages(onProgress?: ProgressCallback): Promise<ImageMeta[
     .ownedBy(OWNER_ADDRESS)
     .withAttributes(true)
     .withPayload(false)
-    .limit(ARKIV_PAGE_SIZE)
+    .limit(PAGE_SIZE)
     .fetch()
 
-  arkivPageCache.clear()
-  cacheTime = now
-
+  let allImages = parseEntities(result.entities)
   let pageNum = 1
-  arkivPageCache.set(pageNum, parseEntities(result.entities))
-  onProgress?.(`Fetching page ${pageNum}...`, pageNum * ARKIV_PAGE_SIZE)
+  onProgress?.(`Loading page ${pageNum}...`, allImages.length)
 
   while (result.hasNextPage()) {
     pageNum++
     await result.next()
-    arkivPageCache.set(pageNum, parseEntities(result.entities))
-    onProgress?.(`Fetching page ${pageNum}...`, pageNum * ARKIV_PAGE_SIZE)
+    allImages = allImages.concat(parseEntities(result.entities))
+    onProgress?.(`Loading page ${pageNum}...`, allImages.length)
   }
 
-  totalArkivPages = pageNum
-
-  // Combine all pages
-  const allImages: ImageMeta[] = []
-  for (let i = 1; i <= totalArkivPages; i++) {
-    allImages.push(...(arkivPageCache.get(i) || []))
-  }
-
-  onProgress?.("Sorting results...", allImages.length)
+  // Sort by ID descending
   allImages.sort((a, b) => (parseInt(b.id) || 0) - (parseInt(a.id) || 0))
-  allImagesSorted = allImages
+
+  // Update max ID cache
+  if (allImages.length > 0) {
+    cachedMaxId = parseInt(allImages[0].id) || 0
+  }
 
   onProgress?.("Complete", allImages.length)
-  console.log(`Fetched all ${allImages.length} images`)
   return allImages
 }
 
@@ -279,35 +268,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
           pagination: { page, perPage, total, totalPages },
         })
       } else {
-        // No search - use lazy pagination (fast!)
-        const startIdx = (page - 1) * perPage
-        const endIdx = startIdx + perPage
-
-        const { images, hasMore, totalFetched } = await fetchPagesForRange(
-          startIdx,
-          endIdx,
+        // No search - use reverse pagination (newest first)
+        const { images, total, totalPages } = await fetchImagesReverse(
+          page,
+          perPage,
           (status, count) => sendEvent("progress", { status, count: count || 0 })
         )
 
-        // Calculate total (estimate if we don't know yet)
-        let total: number
-        let totalPages: number
-        if (totalArkivPages !== null) {
-          // We know the exact total
-          total = 0
-          for (let i = 1; i <= totalArkivPages; i++) {
-            total += arkivPageCache.get(i)?.length || 0
-          }
-          totalPages = Math.ceil(total / perPage)
-        } else {
-          // Estimate: we have at least this many, show "+" indicator
-          total = hasMore ? totalFetched + 1 : totalFetched
-          totalPages = hasMore ? page + 1 : page
-        }
-
         sendEvent("complete", {
           images,
-          pagination: { page, perPage, total, totalPages, estimated: totalArkivPages === null },
+          pagination: { page, perPage, total, totalPages },
         })
       }
     } catch (error) {
@@ -341,28 +311,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
           pagination: { page, perPage, total, totalPages },
         }))
       } else {
-        // Lazy pagination
-        const startIdx = (page - 1) * perPage
-        const endIdx = startIdx + perPage
-        const { images, hasMore, totalFetched } = await fetchPagesForRange(startIdx, endIdx)
-
-        let total: number
-        let totalPages: number
-        if (totalArkivPages !== null) {
-          total = 0
-          for (let i = 1; i <= totalArkivPages; i++) {
-            total += arkivPageCache.get(i)?.length || 0
-          }
-          totalPages = Math.ceil(total / perPage)
-        } else {
-          total = hasMore ? totalFetched + 1 : totalFetched
-          totalPages = hasMore ? page + 1 : page
-        }
+        // Reverse pagination (newest first)
+        const { images, total, totalPages } = await fetchImagesReverse(page, perPage)
 
         res.writeHead(200, { "Content-Type": "application/json" })
         res.end(JSON.stringify({
           images,
-          pagination: { page, perPage, total, totalPages, estimated: totalArkivPages === null },
+          pagination: { page, perPage, total, totalPages },
         }))
       }
     } catch (error) {
