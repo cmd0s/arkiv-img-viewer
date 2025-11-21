@@ -155,9 +155,27 @@
       font-size: 0.9rem;
       color: #aaa;
       line-height: 1.4;
-      max-height: 60px;
+      max-height: 42px;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .card-footer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+    .explorer-link {
+      font-size: 0.75rem;
+      color: #666;
+      text-decoration: none;
+      padding: 4px 8px;
+      background: #0f0f23;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    .explorer-link:hover {
+      color: #e94560;
+      background: #1a1a2e;
     }
     .pagination {
       display: flex;
@@ -470,6 +488,7 @@
       <div class="modal-info">
         <p><strong>ID:</strong> <span id="modal-id"></span></p>
         <p><strong>Prompt:</strong> <span id="modal-prompt"></span></p>
+        <p style="margin-top:12px"><a id="modal-explorer" href="#" target="_blank" class="explorer-link" style="font-size:0.85rem;padding:6px 12px;">View on ARKIV Explorer</a></p>
       </div>
     </div>
   </div>
@@ -576,6 +595,10 @@
       return `/api/image?key=${encodeURIComponent(key)}`;
     }
 
+    function getExplorerUrl(key) {
+      return `https://explorer.mendoza.hoodi.arkiv.network/entity/${key}?tab=data`;
+    }
+
     function highlightSearch(text) {
       if (!currentSearch) return text;
       const regex = new RegExp(`(${currentSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
@@ -618,6 +641,9 @@
           <div class="card-info">
             <div class="card-id">ID: ${img.id}</div>
             <div class="card-prompt">${highlightSearch(img.prompt) || 'No prompt'}</div>
+            <div class="card-footer">
+              <a href="${getExplorerUrl(img.key)}" target="_blank" class="explorer-link" onclick="event.stopPropagation()">Explorer</a>
+            </div>
           </div>
         </div>
       `).join('');
@@ -641,6 +667,7 @@
       modalImg.src = getImageUrl(img.key);
       document.getElementById('modal-id').textContent = img.id;
       document.getElementById('modal-prompt').innerHTML = highlightSearch(img.prompt) || 'No prompt';
+      document.getElementById('modal-explorer').href = getExplorerUrl(img.key);
       document.getElementById('modal').classList.add('active');
     }
 
