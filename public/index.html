@@ -68,6 +68,28 @@
       opacity: 0.6;
       cursor: not-allowed;
     }
+    .per-page-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .per-page-box label {
+      color: #888;
+      font-size: 0.9rem;
+    }
+    .per-page-box select {
+      padding: 8px 12px;
+      border: 2px solid #16213e;
+      border-radius: 8px;
+      background: #0f0f23;
+      color: #eee;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .per-page-box select:focus {
+      outline: none;
+      border-color: #e94560;
+    }
     .stats {
       background: #16213e;
       padding: 10px 20px;
@@ -476,6 +498,14 @@
         <button onclick="doSearch()" id="btn-search">Search</button>
         <button onclick="clearSearch()" id="btn-clear" style="background:#16213e;border:2px solid #16213e;">Clear</button>
       </div>
+      <div class="per-page-box">
+        <label for="per-page">Per page:</label>
+        <select id="per-page" onchange="changePerPage(this.value)">
+          <option value="20">20</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
     </div>
     <div class="stats" id="stats">Loading...</div>
   </header>
@@ -518,7 +548,7 @@
     let totalImages = 0;
     let currentSearch = '';
     let isLoading = false;
-    const perPage = 100;
+    let perPage = 50;
 
     function showLoading(text = 'Loading images...') {
       isLoading = true;
@@ -607,6 +637,12 @@
       if (isLoading) return;
       document.getElementById('search').value = '';
       loadImages(1, '');
+    }
+
+    function changePerPage(value) {
+      if (isLoading) return;
+      perPage = parseInt(value);
+      loadImages(1, currentSearch);
     }
 
     function getImageUrl(key) {
