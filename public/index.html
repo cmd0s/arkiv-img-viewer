@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CCats Gallery - Arkiv Image Viewer</title>
+  <title>CCats</title>
   <style>
     * {
       margin: 0;
@@ -24,7 +24,20 @@
     h1 {
       font-size: 2rem;
       color: #e94560;
+      margin-bottom: 5px;
+    }
+    .sister-site {
       margin-bottom: 15px;
+      font-size: 0.95rem;
+      color: #888;
+    }
+    .sister-site a {
+      color: #4ecdc4;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .sister-site a:hover {
+      text-decoration: underline;
     }
     .controls {
       display: flex;
@@ -446,11 +459,12 @@
   </div>
 
   <header>
-    <h1>CCats Gallery</h1>
+    <h1>CCats Gallery by <a href="https://github.com/cmd0s" target="_blank">Cmd0s</a></h1>
+    <p class="sister-site">Also check out: <a href="https://cdogs.onrender.com" target="_blank">CDogs Gallery</a></p>
 
     <div class="info-section" id="info-section">
       <div class="info-header" onclick="toggleInfo()">
-        <span class="powered-by">Powered by <a href="https://arkiv.network" target="_blank">ARKIV</a> database</span>
+        <span class="powered-by">Powered by <a href="https://arkiv.network" target="_blank">ARKIV</a> Web3 database</span>
         <span class="info-toggle">About <span class="arrow">▼</span></span>
       </div>
       <div class="info-content">
@@ -459,7 +473,7 @@
           <p>Image gallery browser for pictures stored on the <a href="https://arkiv.network" target="_blank">ARKIV</a> decentralized database. Built with TypeScript using the official <a href="https://github.com/arkiv-network/arkiv-sdk-js" target="_blank">ARKIV JavaScript/TypeScript SDK</a>.</p>
 
           <h3>Image Generator (Python)</h3>
-          <p>A separate Python application generates and uploads images using the <a href="https://github.com/arkiv-network/arkiv-sdk-py" target="_blank">ARKIV Python SDK</a>:</p>
+          <p>A separate Python application generates and uploads images using the <a href="https://arkiv.network/getting-started/python" target="_blank">ARKIV Python SDK</a>:</p>
           <ul>
             <li>AI-generated cat images using <strong>ComfyUI + Qwen 2.5 VL</strong> model</li>
             <li><strong>2.3M+</strong> unique prompt combinations (cats × accessories × styles × colors × backgrounds)</li>
