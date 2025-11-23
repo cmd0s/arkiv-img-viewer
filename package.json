@@ -8,7 +8,7 @@
     "dev": "node --experimental-strip-types --watch server.ts"
   },
   "dependencies": {
-    "@arkiv-network/sdk": "^0.2.0",
+    "@arkiv-network/sdk": "^0.5.3",
     "dotenv": "^16.4.5"
   }
 }

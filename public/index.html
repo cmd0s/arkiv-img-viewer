@@ -26,6 +26,13 @@
       color: #e94560;
       margin-bottom: 5px;
     }
+    h1 a {
+      color: inherit;
+      text-decoration: none;
+    }
+    h1 a:hover {
+      text-decoration: underline;
+    }
     .sister-site {
       margin-bottom: 15px;
       font-size: 0.95rem;
@@ -39,75 +46,12 @@
     .sister-site a:hover {
       text-decoration: underline;
     }
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 15px;
-      justify-content: center;
-      align-items: center;
-      margin-bottom: 15px;
-    }
-    .search-box {
-      display: flex;
-      gap: 8px;
-    }
-    .search-box input {
-      padding: 10px 15px;
-      border: 2px solid #16213e;
-      border-radius: 8px;
-      background: #0f0f23;
-      color: #eee;
-      font-size: 1rem;
-      width: 250px;
-    }
-    .search-box input:focus {
-      outline: none;
-      border-color: #e94560;
-    }
-    .search-box button {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      background: #e94560;
-      color: white;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    .search-box button:hover:not(:disabled) {
-      background: #ff6b6b;
-    }
-    .search-box button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    .per-page-box {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .per-page-box label {
-      color: #888;
-      font-size: 0.9rem;
-    }
-    .per-page-box select {
-      padding: 8px 12px;
-      border: 2px solid #16213e;
-      border-radius: 8px;
-      background: #0f0f23;
-      color: #eee;
-      font-size: 0.9rem;
-      cursor: pointer;
-    }
-    .per-page-box select:focus {
-      outline: none;
-      border-color: #e94560;
-    }
     .stats {
       background: #16213e;
       padding: 10px 20px;
       border-radius: 8px;
       font-size: 0.95rem;
+      display: inline-block;
     }
     .stats strong {
       color: #e94560;
@@ -216,71 +160,6 @@
       color: #e94560;
       background: #1a1a2e;
     }
-    .pagination {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 10px;
-      margin-top: 30px;
-      flex-wrap: wrap;
-    }
-    .pagination button {
-      padding: 10px 20px;
-      border: 2px solid #16213e;
-      border-radius: 8px;
-      background: #16213e;
-      color: #eee;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .pagination button:hover:not(:disabled) {
-      border-color: #e94560;
-      background: #e94560;
-    }
-    .pagination button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    .pagination .page-info {
-      padding: 10px 15px;
-      color: #888;
-    }
-
-    /* Global loading overlay */
-    .loading-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(26, 26, 46, 0.9);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 500;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s;
-    }
-    .loading-overlay.active {
-      opacity: 1;
-      pointer-events: auto;
-    }
-    .loading-spinner {
-      width: 60px;
-      height: 60px;
-      border: 4px solid #16213e;
-      border-top-color: #e94560;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-bottom: 20px;
-    }
-    .loading-overlay p {
-      color: #888;
-      font-size: 1.1rem;
-    }
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -317,6 +196,12 @@
     }
     .modal-img-container .loading-spinner {
       position: absolute;
+      width: 60px;
+      height: 60px;
+      border: 4px solid #16213e;
+      border-top-color: #e94560;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
     }
     .modal-content img {
       width: 100%;
@@ -340,12 +225,6 @@
       font-size: 2rem;
       color: #fff;
       cursor: pointer;
-    }
-    .highlight {
-      background: #e94560;
-      color: white;
-      padding: 0 2px;
-      border-radius: 2px;
     }
     .info-section {
       max-width: 800px;
@@ -453,11 +332,6 @@
   </style>
 </head>
 <body>
-  <div class="loading-overlay" id="loading-overlay">
-    <div class="loading-spinner"></div>
-    <p id="loading-text">Loading images...</p>
-  </div>
-
   <header>
     <h1>CCats Gallery by <a href="https://github.com/cmd0s" target="_blank">Cmd0s</a></h1>
     <p class="sister-site">Also check out: <a href="https://cdogs.onrender.com" target="_blank">CDogs Gallery</a></p>
@@ -496,41 +370,11 @@
         </div>
       </div>
     </div>
-    <div class="controls">
-      <div class="search-box">
-        <input type="text" id="search" placeholder="Search in prompts..." onkeydown="if(event.key==='Enter')doSearch()">
-        <button onclick="doSearch()" id="btn-search">Search</button>
-        <button onclick="clearSearch()" id="btn-clear" style="background:#16213e;border:2px solid #16213e;">Clear</button>
-      </div>
-      <div class="per-page-box">
-        <label for="per-page">Per page:</label>
-        <select id="per-page" onchange="changePerPage(this.value)">
-          <option value="20">20</option>
-          <option value="50" selected>50</option>
-          <option value="100">100</option>
-        </select>
-      </div>
-    </div>
     <div class="stats" id="stats">Loading...</div>
-    <div class="pagination" id="pagination-top" style="display:none; margin-top: 15px;">
-      <button onclick="goToPage(1)" id="btn-first-top">First</button>
-      <button onclick="goToPage(currentPage - 1)" id="btn-prev-top">Prev</button>
-      <span class="page-info" id="page-info-top"></span>
-      <button onclick="goToPage(currentPage + 1)" id="btn-next-top">Next</button>
-      <button onclick="goToPage(totalPages)" id="btn-last-top">Last</button>
-    </div>
   </header>
 
   <div id="content">
     <div class="loading-text">Loading images...</div>
-  </div>
-
-  <div class="pagination" id="pagination" style="display:none;">
-    <button onclick="goToPage(1)" id="btn-first">First</button>
-    <button onclick="goToPage(currentPage - 1)" id="btn-prev">Prev</button>
-    <span class="page-info" id="page-info"></span>
-    <button onclick="goToPage(currentPage + 1)" id="btn-next">Next</button>
-    <button onclick="goToPage(totalPages)" id="btn-last">Last</button>
   </div>
 
   <div class="modal" id="modal">
@@ -553,146 +397,27 @@
 
   <script>
     let images = [];
-    let currentPage = 1;
-    let totalPages = 1;
-    let totalImages = 0;
-    let isEstimated = false;
-    let currentSearch = '';
-    let isLoading = false;
-    let perPage = 50;
-    let loadingTimer = null;
-    let loadingStartTime = 0;
-    function showLoading(text = 'Connecting to ARKIV...') {
-      isLoading = true;
-      loadingStartTime = Date.now();
-      updateLoadingText(text);
-      document.getElementById('loading-overlay').classList.add('active');
-      document.getElementById('btn-search').disabled = true;
-      document.getElementById('btn-clear').disabled = true;
-    }
 
-    function updateLoadingText(status, count) {
-      const elapsed = Math.floor((Date.now() - loadingStartTime) / 1000);
-      let text = status;
-      if (count !== undefined && count > 0) {
-        text += ` (${count} entities)`;
-      }
-      text += ` [${elapsed}s]`;
-      document.getElementById('loading-text').textContent = text;
-    }
-
-    function hideLoading() {
-      isLoading = false;
-      document.getElementById('loading-overlay').classList.remove('active');
-      document.getElementById('btn-search').disabled = false;
-      document.getElementById('btn-clear').disabled = false;
-    }
-
-    function loadImages(page = 1, search = '') {
-      if (isLoading) return;
-
-      currentPage = page;
-      currentSearch = search;
-
-      const initialText = search ? `Searching for "${search}"...` : 'Connecting to ARKIV...';
-      showLoading(initialText);
-
-      const params = new URLSearchParams({ page: page.toString(), perPage: perPage.toString() });
-      if (search) params.set('search', search);
-
-      const eventSource = new EventSource(`/api/images/stream?${params}`);
-
-      eventSource.addEventListener('progress', (e) => {
-        const data = JSON.parse(e.data);
-        updateLoadingText(data.status, data.count);
-      });
-
-      eventSource.addEventListener('complete', (e) => {
-        const data = JSON.parse(e.data);
+    async function loadImages() {
+      try {
+        const res = await fetch('/api/images');
+        const data = await res.json();
         images = data.images;
-        totalPages = data.pagination.totalPages;
-        totalImages = data.pagination.total;
-        isEstimated = data.pagination.estimated || false;
-
         updateStats();
         renderGallery();
-        updatePagination();
-        hideLoading();
-        eventSource.close();
-      });
-
-      eventSource.addEventListener('error', (e) => {
-        console.error('SSE error:', e);
+      } catch (err) {
+        console.error('Error loading images:', err);
         document.getElementById('content').innerHTML =
           '<div class="error">Failed to load images. Please refresh the page.</div>';
-        hideLoading();
-        eventSource.close();
-      });
-
-      eventSource.onerror = () => {
-        if (eventSource.readyState === EventSource.CLOSED) return;
-        console.error('EventSource failed');
-        document.getElementById('content').innerHTML =
-          '<div class="error">Connection failed. Please refresh the page.</div>';
-        hideLoading();
-        eventSource.close();
-      };
+      }
     }
 
     function updateStats() {
-      const searchInfo = currentSearch ? ` matching "${currentSearch}"` : '';
-      const start = totalImages > 0 ? (currentPage - 1) * perPage + 1 : 0;
-      const end = start + images.length - 1;
-      const totalDisplay = isEstimated ? `${totalImages - 1}+` : totalImages;
+      const idRange = images.length > 0
+        ? `ID ${images[0].id} - ${images[images.length - 1].id}`
+        : '';
       document.getElementById('stats').innerHTML =
-        `<strong>${totalDisplay}</strong> images${searchInfo} | Showing <strong>${start}-${end}</strong>`;
-    }
-
-    function updatePagination() {
-      const showPagination = totalPages > 1 || isEstimated;
-      const pagesDisplay = isEstimated ? `${totalPages}+` : totalPages;
-      const pageText = `Page ${currentPage} of ${pagesDisplay}`;
-      const isFirst = currentPage === 1;
-      const isLast = !isEstimated && currentPage === totalPages;
-
-      // Update both pagination bars
-      ['', '-top'].forEach(suffix => {
-        const pagination = document.getElementById('pagination' + suffix);
-        pagination.style.display = showPagination ? 'flex' : 'none';
-        if (showPagination) {
-          document.getElementById('page-info' + suffix).textContent = pageText;
-          document.getElementById('btn-first' + suffix).disabled = isFirst;
-          document.getElementById('btn-prev' + suffix).disabled = isFirst;
-          document.getElementById('btn-next' + suffix).disabled = isLast;
-          document.getElementById('btn-last' + suffix).disabled = isEstimated || currentPage === totalPages;
-        }
-      });
-    }
-
-    function goToPage(page) {
-      if (page < 1 || isLoading) return;
-      // Allow going to next page even if estimated (we'll find out if there's more)
-      if (!isEstimated && page > totalPages) return;
-      loadImages(page, currentSearch);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
-    function doSearch() {
-      if (isLoading) return;
-      const search = document.getElementById('search').value.trim();
-      loadImages(1, search);
-    }
-
-    function clearSearch() {
-      if (isLoading) return;
-      document.getElementById('search').value = '';
-      loadImages(1, '');
-    }
-
-    function changePerPage(value) {
-      if (isLoading) return;
-      perPage = parseInt(value);
-      loadImages(1, currentSearch);
+        `<strong>${images.length}</strong> newest images | ${idRange}`;
     }
 
     function getImageUrl(key) {
@@ -703,13 +428,7 @@
       return `https://explorer.mendoza.hoodi.arkiv.network/entity/${key}?tab=data`;
     }
 
-    function highlightSearch(text) {
-      if (!currentSearch) return text;
-      const regex = new RegExp(`(${currentSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-      return text.replace(regex, '<span class="highlight">$1</span>');
-    }
-
-    function onImageLoad(img, loader, idx) {
+    function onImageLoad(img, loader) {
       img.classList.add('loaded');
       loader.classList.add('hidden');
     }
@@ -723,9 +442,7 @@
     function renderGallery() {
       if (images.length === 0) {
         document.getElementById('content').innerHTML =
-          currentSearch
-            ? `<div class="loading-text">No images found matching "${currentSearch}"</div>`
-            : '<div class="loading-text">No images found</div>';
+          '<div class="loading-text">No images found</div>';
         return;
       }
 
@@ -737,7 +454,7 @@
               src="${getImageUrl(img.key)}"
               alt="${img.prompt}"
               loading="lazy"
-              onload="onImageLoad(this, document.getElementById('loader-${idx}'), ${idx})"
+              onload="onImageLoad(this, document.getElementById('loader-${idx}'))"
               onerror="onImageError(this, document.getElementById('loader-${idx}'), document.getElementById('placeholder-${idx}'))"
             >
             <span class="placeholder" id="placeholder-${idx}" style="display:none">Failed to load</span>
@@ -750,7 +467,7 @@
                 <a href="${getExplorerUrl(img.key)}" target="_blank" class="explorer-link" onclick="event.stopPropagation()">Explorer</a>
               </div>
             </div>
-            <div class="card-prompt">${highlightSearch(img.prompt) || 'No prompt'}</div>
+            <div class="card-prompt">${img.prompt || 'No prompt'}</div>
           </div>
         </div>
       `).join('');
@@ -773,7 +490,7 @@
 
       modalImg.src = getImageUrl(img.key);
       document.getElementById('modal-id').textContent = img.id;
-      document.getElementById('modal-prompt').innerHTML = highlightSearch(img.prompt) || 'No prompt';
+      document.getElementById('modal-prompt').textContent = img.prompt || 'No prompt';
       document.getElementById('modal-download').href = getImageUrl(img.key);
       document.getElementById('modal-download').download = `ccats-${img.id}.png`;
       document.getElementById('modal-explorer').href = getExplorerUrl(img.key);
