@@ -160,6 +160,30 @@
       color: #e94560;
       background: #1a1a2e;
     }
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-top: 30px;
+    }
+    .pagination button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      background: #e94560;
+      color: white;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .pagination button:hover:not(:disabled) {
+      background: #ff6b6b;
+    }
+    .pagination button:disabled {
+      background: #16213e;
+      color: #666;
+      cursor: not-allowed;
+    }
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -370,11 +394,30 @@
         </div>
       </div>
     </div>
+    <div class="controls" style="margin: 15px 0;">
+      <label for="per-page" style="color: #888;">Per page:</label>
+      <select id="per-page" onchange="changePerPage(this.value)" style="padding: 8px 12px; border: 2px solid #16213e; border-radius: 8px; background: #0f0f23; color: #eee; font-size: 0.9rem; cursor: pointer;">
+        <option value="20">20</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+        <option value="500">500</option>
+        <option value="1000">1000</option>
+      </select>
+    </div>
     <div class="stats" id="stats">Loading...</div>
+    <div class="pagination" id="pagination-top" style="display:none; margin-top: 15px;">
+      <button onclick="goFirst()" id="btn-first-top">First</button>
+      <button onclick="goNext()" id="btn-next-top">Next</button>
+    </div>
   </header>
 
   <div id="content">
     <div class="loading-text">Loading images...</div>
+  </div>
+
+  <div class="pagination" id="pagination" style="display:none;">
+    <button onclick="goFirst()" id="btn-first">First</button>
+    <button onclick="goNext()" id="btn-next">Next</button>
   </div>
 
   <div class="modal" id="modal">
@@ -397,14 +440,41 @@
 
   <script>
     let images = [];
+    let sessionId = null;
+    let hasMore = false;
+    let currentPage = 1;
+    let perPage = 50;
 
-    async function loadImages() {
+    async function loadImages(isNext = false) {
+      document.getElementById('content').innerHTML = '<div class="loading-text">Loading images...</div>';
+      document.getElementById('pagination').style.display = 'none';
+      document.getElementById('pagination-top').style.display = 'none';
+
       try {
-        const res = await fetch('/api/images');
+        let url;
+        if (isNext && sessionId) {
+          url = `/api/images?sessionId=${sessionId}`;
+        } else {
+          url = `/api/images?limit=${perPage}`;
+          sessionId = null;
+          currentPage = 1;
+        }
+
+        const res = await fetch(url);
         const data = await res.json();
+
+        if (data.error) {
+          throw new Error(data.error);
+        }
+
         images = data.images;
+        sessionId = data.sessionId;
+        hasMore = data.hasMore;
+        if (isNext) currentPage++;
+
         updateStats();
         renderGallery();
+        updatePagination();
       } catch (err) {
         console.error('Error loading images:', err);
         document.getElementById('content').innerHTML =
@@ -417,7 +487,36 @@
         ? `ID ${images[0].id} - ${images[images.length - 1].id}`
         : '';
       document.getElementById('stats').innerHTML =
-        `<strong>${images.length}</strong> newest images | ${idRange}`;
+        `Page <strong>${currentPage}</strong> | ${images.length} images | ${idRange}`;
+    }
+
+    function updatePagination() {
+      ['', '-top'].forEach(suffix => {
+        const pagination = document.getElementById('pagination' + suffix);
+        const btnFirst = document.getElementById('btn-first' + suffix);
+        const btnNext = document.getElementById('btn-next' + suffix);
+
+        pagination.style.display = 'flex';
+        btnFirst.disabled = currentPage === 1;
+        btnNext.disabled = !hasMore;
+      });
+    }
+
+    function changePerPage(value) {
+      perPage = parseInt(value);
+      loadImages(false);
+    }
+
+    function goFirst() {
+      loadImages(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function goNext() {
+      if (hasMore) {
+        loadImages(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     }
 
     function getImageUrl(key) {
@@ -513,7 +612,7 @@
       document.getElementById('info-section').classList.toggle('expanded');
     }
 
-    loadImages();
+    loadImages(false);
   </script>
 </body>
 </html>
