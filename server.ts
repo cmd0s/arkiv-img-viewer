@@ -2,6 +2,7 @@ import { createServer, IncomingMessage, ServerResponse } from "node:http"
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
+import { randomBytes } from "node:crypto"
 import { config } from "dotenv"
 import { createPublicClient, http } from "@arkiv-network/sdk"
 import { defineChain } from "viem"
@@ -41,6 +42,27 @@ interface ImageMeta {
   prompt: string
 }
 
+// Session cache for pagination results
+interface PaginationSession {
+  result: any
+  currentPage: number
+  perPage: number
+  createdAt: number
+}
+
+const sessionCache = new Map<string, PaginationSession>()
+const SESSION_TTL = 5 * 60 * 1000 // 5 minutes
+
+// Cleanup old sessions periodically
+setInterval(() => {
+  const now = Date.now()
+  for (const [id, session] of sessionCache) {
+    if (now - session.createdAt > SESSION_TTL) {
+      sessionCache.delete(id)
+    }
+  }
+}, 60 * 1000)
+
 // Parse entities into ImageMeta
 function parseEntities(entities: any[]): ImageMeta[] {
   return entities.map((entity) => {
@@ -53,18 +75,49 @@ function parseEntities(entities: any[]): ImageMeta[] {
   })
 }
 
-// Fetch 50 newest images
-async function fetchImages(): Promise<ImageMeta[]> {
+// Create new pagination session
+async function createSession(perPage: number): Promise<{ sessionId: string; images: ImageMeta[]; hasMore: boolean }> {
   const query = publicClient.buildQuery()
   const result = await query
     .ownedBy(OWNER_ADDRESS)
     .withPayload(false)
     .withAttributes(true)
     .orderBy("id", "number", "desc")
-    .limit(50)
+    .limit(perPage)
     .fetch()
 
-  return parseEntities(result.entities)
+  const sessionId = randomBytes(8).toString("hex")
+  sessionCache.set(sessionId, {
+    result,
+    currentPage: 1,
+    perPage,
+    createdAt: Date.now(),
+  })
+
+  return {
+    sessionId,
+    images: parseEntities(result.entities),
+    hasMore: result.hasNextPage(),
+  }
+}
+
+// Get next page from existing session
+async function getNextPage(sessionId: string): Promise<{ images: ImageMeta[]; hasMore: boolean } | null> {
+  const session = sessionCache.get(sessionId)
+  if (!session) return null
+
+  if (!session.result.hasNextPage()) {
+    return { images: [], hasMore: false }
+  }
+
+  await session.result.next()
+  session.currentPage++
+  session.createdAt = Date.now() // Refresh TTL
+
+  return {
+    images: parseEntities(session.result.entities),
+    hasMore: session.result.hasNextPage(),
+  }
 }
 
 // Fetch single image by key
@@ -83,14 +136,41 @@ async function fetchImage(key: string): Promise<Buffer | null> {
 async function handleRequest(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url || "/", `http://localhost:${PORT}`)
 
-  // List of images
+  // List of images with SDK pagination
   if (url.pathname === "/api/images") {
     try {
-      const images = await fetchImages()
-      console.log(`Fetched ${images.length} images`)
+      const sessionId = url.searchParams.get("sessionId")
+      const limitParam = url.searchParams.get("limit")
+      const perPage = limitParam ? Math.min(parseInt(limitParam), 1000) : 50
 
-      res.writeHead(200, { "Content-Type": "application/json" })
-      res.end(JSON.stringify({ images }))
+      if (sessionId) {
+        // Continue existing session
+        const pageData = await getNextPage(sessionId)
+        if (!pageData) {
+          res.writeHead(404, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Session not found or expired" }))
+          return
+        }
+
+        console.log(`Session ${sessionId}: ${pageData.images.length} images, hasMore: ${pageData.hasMore}`)
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({
+          images: pageData.images,
+          sessionId,
+          hasMore: pageData.hasMore,
+        }))
+      } else {
+        // New session
+        const { sessionId: newSessionId, images, hasMore } = await createSession(perPage)
+
+        console.log(`New session ${newSessionId}: ${images.length} images, hasMore: ${hasMore}`)
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({
+          images,
+          sessionId: newSessionId,
+          hasMore,
+        }))
+      }
     } catch (error) {
       console.error("Error fetching images:", error)
       res.writeHead(500, { "Content-Type": "application/json" })
