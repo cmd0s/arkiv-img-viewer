@@ -10,7 +10,7 @@ import { defineChain } from "viem"
 config()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const PORT = 8080
+const PORT = 3000
 const OWNER_ADDRESS = process.env.ACCOUNT_ADR! as `0x${string}`
 const RPC_URL = process.env.RPC_URL!
 
