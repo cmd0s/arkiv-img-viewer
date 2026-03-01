@@ -36,6 +36,51 @@ const publicClient = createPublicClient({
   transport: http(),
 })
 
+// Semaphore to limit concurrent RPC calls (Mendoza rate-limits at ~12)
+const MAX_CONCURRENT_RPC = 8
+let activeRpcCalls = 0
+const rpcQueue: Array<() => void> = []
+
+function acquireRpc(): Promise<void> {
+  if (activeRpcCalls < MAX_CONCURRENT_RPC) {
+    activeRpcCalls++
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => rpcQueue.push(resolve))
+}
+
+function releaseRpc(): void {
+  const next = rpcQueue.shift()
+  if (next) {
+    next()
+  } else {
+    activeRpcCalls--
+  }
+}
+
+// LRU image cache (max ~100MB assuming ~100KB per image)
+const IMAGE_CACHE_MAX = 1000
+const imageCache = new Map<string, Buffer>()
+
+function cacheGet(key: string): Buffer | undefined {
+  const val = imageCache.get(key)
+  if (val) {
+    // Move to end (most recently used)
+    imageCache.delete(key)
+    imageCache.set(key, val)
+  }
+  return val
+}
+
+function cacheSet(key: string, data: Buffer): void {
+  if (imageCache.size >= IMAGE_CACHE_MAX) {
+    // Evict oldest entry
+    const oldest = imageCache.keys().next().value!
+    imageCache.delete(oldest)
+  }
+  imageCache.set(key, data)
+}
+
 interface ImageMeta {
   key: string
   id: string
@@ -140,17 +185,35 @@ async function getNextPage(sessionId: string): Promise<{ images: ImageMeta[]; ha
   }
 }
 
-// Fetch single image by key
+// Fetch single image by key with concurrency control, caching, and retry
 async function fetchImage(key: string): Promise<Buffer | null> {
-  try {
-    const entity = await publicClient.getEntity(key)
-    if (entity?.payload) {
-      return Buffer.from(entity.payload)
+  const cached = cacheGet(key)
+  if (cached) return cached
+
+  const MAX_RETRIES = 2
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    await acquireRpc()
+    try {
+      const entity = await publicClient.getEntity(key)
+      if (entity?.payload) {
+        const buf = Buffer.from(entity.payload)
+        cacheSet(key, buf)
+        return buf
+      }
+      return null
+    } catch (err) {
+      if (attempt < MAX_RETRIES) {
+        console.warn(`RPC retry ${attempt + 1}/${MAX_RETRIES} for ${key.slice(0, 16)}...`)
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)))
+        continue
+      }
+      console.error(`RPC failed after ${MAX_RETRIES + 1} attempts for ${key.slice(0, 16)}...:`, (err as Error).message)
+      return null
+    } finally {
+      releaseRpc()
     }
-    return null
-  } catch {
-    return null
   }
+  return null
 }
 
 async function handleRequest(req: IncomingMessage, res: ServerResponse) {
@@ -161,7 +224,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     try {
       const sessionId = url.searchParams.get("sessionId")
       const limitParam = url.searchParams.get("limit")
-      const perPage = limitParam ? Math.min(parseInt(limitParam), 1000) : 50
+      const perPage = limitParam ? Math.min(parseInt(limitParam), 200) : 50
 
       if (sessionId) {
         // Continue existing session
