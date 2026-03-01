@@ -42,11 +42,11 @@ interface ImageMeta {
   prompt: string
 }
 
-// Session cache for pagination results
+// Session cache for cursor-based pagination
 interface PaginationSession {
-  result: any
-  currentPage: number
+  cursor: string | null
   perPage: number
+  currentPage: number
   createdAt: number
 }
 
@@ -63,60 +63,80 @@ setInterval(() => {
   }
 }, 60 * 1000)
 
-// Parse entities into ImageMeta
-function parseEntities(entities: any[]): ImageMeta[] {
-  return entities.map((entity) => {
-    const attrs = entity.attributes || []
+// Parse raw RPC entities into ImageMeta
+function parseRpcEntities(data: any[]): ImageMeta[] {
+  return data.map((entity) => {
+    const numAttrs = entity.numericAttributes || []
+    const strAttrs = entity.stringAttributes || []
     return {
       key: entity.key,
-      id: String(attrs.find((a: any) => a.key === "id")?.value || ""),
-      prompt: String(attrs.find((a: any) => a.key === "prompt")?.value || ""),
+      id: String(numAttrs.find((a: any) => a.key === "id")?.value ?? strAttrs.find((a: any) => a.key === "id")?.value ?? ""),
+      prompt: String(strAttrs.find((a: any) => a.key === "prompt")?.value || ""),
     }
   })
 }
 
+// Query ARKIV using raw RPC to work around SDK 0.6.x hex encoding bug
+async function queryImages(perPage: number, cursor?: string): Promise<{ images: ImageMeta[]; cursor: string | null }> {
+  const options: any = {
+    includeData: {
+      key: true,
+      attributes: true,
+      payload: false,
+    },
+    resultsPerPage: perPage,
+    orderBy: [{ name: "id", type: "numeric", desc: true }],
+  }
+  if (cursor) {
+    options.cursor = cursor
+  }
+
+  const result = await publicClient.request({
+    method: "arkiv_query" as any,
+    params: [
+      `$owner=${OWNER_ADDRESS}`,
+      options,
+    ],
+  }) as any
+
+  return {
+    images: parseRpcEntities(result.data || []),
+    cursor: result.cursor || null,
+  }
+}
+
 // Create new pagination session
 async function createSession(perPage: number): Promise<{ sessionId: string; images: ImageMeta[]; hasMore: boolean }> {
-  const query = publicClient.buildQuery()
-  const result = await query
-    .ownedBy(OWNER_ADDRESS)
-    .withPayload(false)
-    .withAttributes(true)
-    .orderBy("id", "number", "desc")
-    .limit(perPage)
-    .fetch()
+  const { images, cursor } = await queryImages(perPage)
 
   const sessionId = randomBytes(8).toString("hex")
   sessionCache.set(sessionId, {
-    result,
-    currentPage: 1,
+    cursor,
     perPage,
+    currentPage: 1,
     createdAt: Date.now(),
   })
 
   return {
     sessionId,
-    images: parseEntities(result.entities),
-    hasMore: result.hasNextPage(),
+    images,
+    hasMore: cursor !== null && images.length === perPage,
   }
 }
 
 // Get next page from existing session
 async function getNextPage(sessionId: string): Promise<{ images: ImageMeta[]; hasMore: boolean } | null> {
   const session = sessionCache.get(sessionId)
-  if (!session) return null
+  if (!session || !session.cursor) return null
 
-  if (!session.result.hasNextPage()) {
-    return { images: [], hasMore: false }
-  }
-
-  await session.result.next()
+  const { images, cursor } = await queryImages(session.perPage, session.cursor)
+  session.cursor = cursor
   session.currentPage++
-  session.createdAt = Date.now() // Refresh TTL
+  session.createdAt = Date.now()
 
   return {
-    images: parseEntities(session.result.entities),
-    hasMore: session.result.hasNextPage(),
+    images,
+    hasMore: cursor !== null && images.length === session.perPage,
   }
 }
 
